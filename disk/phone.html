@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0e0e0c" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Disk Space" />
+  <title>Disk Space</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #0e0e0c; color: #f3f1ea; font: 16px/1.45 "Segoe UI", sans-serif; }
+    main { max-width: 40rem; margin: 0 auto; padding: 1rem 1rem 3rem; }
+    h1 { font-size: 1.35rem; font-weight: 500; margin: 0.2rem 0; }
+    p, h2 { color: #a39e93; }
+    h2 { color: #f3f1ea; font-size: 0.95rem; font-weight: 500; margin: 1.1rem 0 0.35rem; }
+    .lead { margin-top: 0; }
+    .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    label.pick { display: inline-flex; align-items: center; min-height: 2.75rem; padding: 0 1rem; border-radius: 8px; cursor: pointer; }
+    label.pick input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    label.primary { background: #f3f1ea; color: #14130f; }
+    label.quiet { border: 1px solid #2e2e27; color: #f3f1ea; }
+    nav { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.75rem; }
+    nav button, .bar, .file { font: inherit; color: inherit; background: transparent; border: 0; cursor: pointer; text-align: left; }
+    nav button { min-height: 2.75rem; padding: 0 0.55rem; border-radius: 8px; }
+    .bar, .file, nav button:hover, .bar:hover, .file:hover, .file.on { background: #171714; }
+    .bar, .file { display: block; width: 100%; border-radius: 8px; padding: 0.55rem 0.6rem; }
+    ul { margin: 0; padding: 0; list-style: none; }
+    .row { display: flex; justify-content: space-between; gap: 0.75rem; }
+    .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .size { color: #a39e93; white-space: nowrap; }
+    .meta { color: #7d786f; font-size: 0.8rem; margin-top: 0.15rem; }
+    .track { height: 8px; background: #22221c; border-radius: 99px; margin-top: 0.35rem; }
+    .fill { height: 8px; background: #f3f1ea; border-radius: 99px; }
+    .total { font-size: 1.15rem; color: #f3f1ea; }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="lead">FAFO</p>
+    <h1>Disk Space</h1>
+    <p>Choose a folder on this phone. Only sizes are read. Tap a bar to open the next breakdown. Nothing is deleted.</p>
+    <div class="actions">
+      <label class="pick primary">Choose a folder
+        <input id="folder" type="file" multiple webkitdirectory />
+      </label>
+      <label class="pick quiet">Or choose files
+        <input id="files" type="file" multiple />
+      </label>
+    </div>
+    <p id="note"></p>
+    <nav id="crumbs" aria-label="Breakdown"></nav>
+    <p id="summary" class="total"></p>
+    <h2 id="kind-title" hidden>By type</h2>
+    <ul id="kinds"></ul>
+    <h2 id="folder-title" hidden>Largest folders</h2>
+    <ul id="folders"></ul>
+    <h2 id="file-title" hidden>Largest files</h2>
+    <ul id="file-list"></ul>
+  </main>
+  <script>
+    const EMBEDDED = [];
+    const VIDEO = new Set(["mp4","mov","mkv","webm","avi","m4v","wmv","mpg"]);
+    const IMAGE = new Set(["jpg","jpeg","png","webp","gif","bmp","tif","tiff"]);
+    const AUDIO = new Set(["mp3","wav","flac","m4a","aac","ogg","wma"]);
+    let entries = [];
+    let folder = "";
+    let kind = "";
+    let picked = "";
+
+    function kindOf(path) {
+      const base = path.slice(path.lastIndexOf("/") + 1);
+      const dot = base.lastIndexOf(".");
+      const ext = dot > 0 ? base.slice(dot + 1).toLowerCase() : "";
+      if (VIDEO.has(ext)) return "Video";
+      if (IMAGE.has(ext)) return "Pictures";
+      if (AUDIO.has(ext)) return "Audio";
+      return "Other";
+    }
+    function bytes(n) {
+      if (n < 1024) return n + " B";
+      if (n < 1048576) return (n / 1024).toFixed(n < 10240 ? 1 : 0) + " KB";
+      if (n < 1073741824) return (n / 1048576).toFixed(n < 10485760 ? 1 : 0) + " MB";
+      return (n / 1073741824).toFixed(1) + " GB";
+    }
+    function normalize(raw) {
+      const paths = raw.map((row) => ({ size: row.size, path: String(row.name || row.path || "").replaceAll("\\", "/").replace(/^\.?\//, "") }));
+      let prefix = "";
+      if (paths.length && paths.every((row) => row.path.includes("/"))) {
+        const root = paths[0].path.split("/")[0];
+        if (root && paths.every((row) => row.path === root || row.path.startsWith(root + "/"))) prefix = root + "/";
+      }
+      return paths.map((row) => {
+        const path = prefix && row.path.startsWith(prefix) ? row.path.slice(prefix.length) : row.path;
+        return { path, size: row.size, kind: row.kind || kindOf(path) };
+      });
+    }
+    function slice() {
+      const prefix = folder ? folder + "/" : "";
+      const folders = new Map();
+      const kinds = new Map();
+      const matched = [];
+      let total = 0;
+      let count = 0;
+      for (const entry of entries) {
+        if (prefix && entry.path !== folder && !entry.path.startsWith(prefix)) continue;
+        if (kind && entry.kind !== kind) continue;
+        const rel = prefix && entry.path.startsWith(prefix) ? entry.path.slice(prefix.length) : entry.path;
+        if (!rel) continue;
+        total += entry.size;
+        count += 1;
+        if (!kind) {
+          const row = kinds.get(entry.kind) || { size: 0, count: 0 };
+          row.size += entry.size; row.count += 1; kinds.set(entry.kind, row);
+        }
+        const slash = rel.indexOf("/");
+        if (slash !== -1) {
+          const name = rel.slice(0, slash);
+          const row = folders.get(name) || { size: 0, count: 0 };
+          row.size += entry.size; row.count += 1; folders.set(name, row);
+        }
+        const name = slash === -1 ? rel : rel.slice(rel.lastIndexOf("/") + 1);
+        const parent = slash === -1 ? (folder || "In this folder") : (folder ? folder + "/" : "") + rel.slice(0, rel.lastIndexOf("/"));
+        matched.push({ name, folder: parent, path: entry.path, size: entry.size, kind: entry.kind });
+      }
+      const rank = (map) => [...map.entries()].map(([name, row]) => ({ name, size: row.size, count: row.count })).sort((a, b) => b.size - a.size).slice(0, 12);
+      matched.sort((a, b) => b.size - a.size);
+      return { total, count, folders: rank(folders), kinds: rank(kinds), files: matched.slice(0, 20), fileCount: matched.length };
+    }
+    function bars(list, rows, total, open) {
+      list.replaceChildren();
+      for (const row of rows) {
+        const pct = total > 0 ? Math.max(2, Math.round((row.size / total) * 100)) : 0;
+        const li = document.createElement("li");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "bar";
+        const line = document.createElement("div");
+        line.className = "row";
+        const name = document.createElement("span");
+        name.className = "name";
+        name.textContent = row.name;
+        const size = document.createElement("span");
+        size.className = "size";
+        size.textContent = bytes(row.size) + " · " + pct + "%";
+        line.append(name, size);
+        const track = document.createElement("div");
+        track.className = "track";
+        const fill = document.createElement("div");
+        fill.className = "fill";
+        fill.style.width = pct + "%";
+        track.append(fill);
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = row.count + (row.count === 1 ? " file" : " files");
+        button.append(line, track, meta);
+        button.onclick = () => open(row.name);
+        li.append(button);
+        list.append(li);
+      }
+    }
+    function draw() {
+      const view = slice();
+      const crumbs = document.querySelector("#crumbs");
+      crumbs.replaceChildren();
+      if (!entries.length) {
+        document.querySelector("#summary").textContent = "";
+        document.querySelector("#kind-title").hidden = true;
+        document.querySelector("#folder-title").hidden = true;
+        document.querySelector("#file-title").hidden = true;
+        document.querySelector("#kinds").replaceChildren();
+        document.querySelector("#folders").replaceChildren();
+        document.querySelector("#file-list").replaceChildren();
+        return;
+      }
+      function crumb(label, go) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = label;
+        button.onclick = go;
+        crumbs.append(button);
+      }
+      crumb("All", () => { folder = ""; kind = ""; picked = ""; draw(); });
+      if (kind) crumb("/ " + kind, () => { folder = ""; picked = ""; draw(); });
+      const parts = folder ? folder.split("/") : [];
+      parts.forEach((part, index) => crumb("/ " + part, () => { folder = parts.slice(0, index + 1).join("/"); picked = ""; draw(); }));
+      document.querySelector("#summary").textContent = bytes(view.total) + " across " + view.count + (view.count === 1 ? " file" : " files");
+      document.querySelector("#kind-title").hidden = !!kind || !view.kinds.length;
+      document.querySelector("#folder-title").hidden = !view.folders.length;
+      document.querySelector("#folder-title").textContent = kind ? kind + " by folder" : "Largest folders";
+      document.querySelector("#file-title").hidden = !view.files.length;
+      bars(document.querySelector("#kinds"), kind ? [] : view.kinds, view.total, (name) => { kind = name; picked = ""; draw(); });
+      bars(document.querySelector("#folders"), view.folders, view.total, (name) => { folder = folder ? folder + "/" + name : name; picked = ""; draw(); });
+      const list = document.querySelector("#file-list");
+      list.replaceChildren();
+      for (const file of view.files) {
+        const li = document.createElement("li");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "file" + (picked === file.path ? " on" : "");
+        const line = document.createElement("div");
+        line.className = "row";
+        const name = document.createElement("span");
+        name.className = "name";
+        name.textContent = file.name;
+        const size = document.createElement("span");
+        size.className = "size";
+        size.textContent = bytes(file.size);
+        line.append(name, size);
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = file.kind + " · " + file.folder;
+        button.append(line, meta);
+        button.onclick = () => {
+          const parent = file.folder === "In this folder" ? "" : file.folder;
+          if (parent && parent !== folder) { folder = parent; kind = ""; }
+          picked = file.path;
+          draw();
+        };
+        li.append(button);
+        list.append(li);
+      }
+    }
+    function load(list) {
+      const raw = [];
+      for (const file of list) raw.push({ name: file.webkitRelativePath || file.name, size: file.size });
+      entries = normalize(raw);
+      folder = ""; kind = ""; picked = "";
+      document.querySelector("#note").textContent = raw.length + " files. Tap a bar to open it.";
+      draw();
+    }
+    document.querySelector("#folder").onchange = (event) => { load(event.target.files); event.target.value = ""; };
+    document.querySelector("#files").onchange = (event) => { load(event.target.files); event.target.value = ""; };
+    if (EMBEDDED.length) {
+      entries = normalize(EMBEDDED);
+      document.querySelector("#note").textContent = entries.length + " files saved in this page. Tap a bar to open it.";
+      draw();
+    }
+  </script>
+</body>
+</html>
