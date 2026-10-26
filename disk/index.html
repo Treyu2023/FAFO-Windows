@@ -6,13 +6,22 @@
   <title>Disk Space</title>
   <style>
     body { margin: 0; background: #0e0e0c; color: #f3f1ea; font: 16px/1.45 "Segoe UI", sans-serif; }
-    main { max-width: 40rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
-    p { color: #a39e93; }
+    main { max-width: 46rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+    p, h2 { color: #a39e93; }
+    h1, h2 { color: #f3f1ea; font-weight: 500; }
+    h2 { font-size: 0.95rem; margin: 1.25rem 0 0.4rem; }
     input, button { height: 2.75rem; font: inherit; }
-    input { width: 100%; background: #171714; color: #f3f1ea; border: 1px solid #2e2e27; border-radius: 8px; padding: 0 0.75rem; }
+    input { width: 100%; box-sizing: border-box; background: #171714; color: #f3f1ea; border: 1px solid #2e2e27; border-radius: 8px; padding: 0 0.75rem; }
     button { margin-top: 0.5rem; background: #f3f1ea; color: #14130f; border: 0; border-radius: 8px; padding: 0 1rem; cursor: pointer; }
-    li { display: flex; justify-content: space-between; gap: 1rem; background: #171714; border-radius: 8px; padding: 0.5rem 0.75rem; margin: 0.25rem 0; }
-    span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    li { list-style: none; margin: 0.55rem 0; }
+    ul { margin: 0; padding: 0; }
+    .row { display: flex; justify-content: space-between; gap: 1rem; }
+    .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .size { color: #a39e93; white-space: nowrap; }
+    .track { height: 4px; background: #22221c; border-radius: 99px; margin-top: 0.25rem; }
+    .fill { height: 4px; background: #f3f1ea; border-radius: 99px; }
+    .cols { display: grid; gap: 1rem; }
+    @media (min-width: 720px) { .cols { grid-template-columns: 1fr 1fr; } }
   </style>
 </head>
 <body>
@@ -22,24 +31,82 @@
     <input id="path" placeholder="C:\Users\you\Videos" />
     <button id="go" type="button">Read folder</button>
     <p id="note"></p>
-    <ul id="list"></ul>
+    <h2 id="kind-title" hidden>By type</h2>
+    <ul id="kinds"></ul>
+    <div class="cols">
+      <section>
+        <h2 id="folder-title" hidden>Largest folders</h2>
+        <ul id="folders"></ul>
+      </section>
+      <section>
+        <h2 id="file-title" hidden>Largest files</h2>
+        <ul id="files"></ul>
+      </section>
+    </div>
   </main>
   <script>
-    const list = document.querySelector("#list");
-    const note = document.querySelector("#note");
     function bytes(n) {
       if (n < 1024) return n + " B";
-      if (n < 1048576) return Math.round(n / 1024) + " KB";
-      if (n < 1073741824) return (n / 1048576).toFixed(1) + " MB";
+      if (n < 1048576) return (n / 1024).toFixed(n < 10240 ? 1 : 0) + " KB";
+      if (n < 1073741824) return (n / 1048576).toFixed(n < 10485760 ? 1 : 0) + " MB";
       return (n / 1073741824).toFixed(1) + " GB";
     }
+    function paint(list, rows, total) {
+      list.replaceChildren();
+      for (const row of rows || []) {
+        const li = document.createElement("li");
+        const line = document.createElement("div");
+        line.className = "row";
+        const name = document.createElement("span");
+        name.className = "name";
+        name.textContent = row.name;
+        const size = document.createElement("span");
+        size.className = "size";
+        size.textContent = bytes(row.size);
+        line.append(name, size);
+        const track = document.createElement("div");
+        track.className = "track";
+        const fill = document.createElement("div");
+        fill.className = "fill";
+        fill.style.width = (total > 0 ? Math.max(2, Math.round((row.size / total) * 100)) : 0) + "%";
+        track.append(fill);
+        li.append(line, track);
+        list.append(li);
+      }
+    }
     document.querySelector("#go").onclick = async () => {
+      const note = document.querySelector("#note");
+      const button = document.querySelector("#go");
       note.textContent = "Reading sizes";
-      const res = await fetch("/api/scan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: document.querySelector("#path").value }) });
-      const body = await res.json();
-      if (body.error) { note.textContent = body.error; list.innerHTML = ""; return; }
-      note.textContent = bytes(body.total) + " across " + body.count + " files" + (body.capped ? " (stopped at the cap)" : "");
-      list.innerHTML = body.files.map((row) => "<li><span>" + row.name.replace(/[&<>]/g, "") + "</span><span>" + bytes(row.size) + "</span></li>").join("");
+      button.disabled = true;
+      try {
+        const res = await fetch("/api/scan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: document.querySelector("#path").value })
+        });
+        const body = await res.json();
+        if (body.error) {
+          note.textContent = body.error;
+          paint(document.querySelector("#kinds"), [], 0);
+          paint(document.querySelector("#folders"), [], 0);
+          paint(document.querySelector("#files"), [], 0);
+          return;
+        }
+        const extra = body.capped ? " Stopped at the file cap." : "";
+        const missed = body.skipped ? " " + body.skipped + " could not be read." : "";
+        note.textContent = bytes(body.total) + " across " + body.count + " files." + extra + missed;
+        document.querySelector("#kind-title").hidden = false;
+        document.querySelector("#folder-title").hidden = false;
+        document.querySelector("#file-title").hidden = false;
+        paint(document.querySelector("#kinds"), body.kinds, body.total);
+        paint(document.querySelector("#folders"), body.folders, body.total);
+        paint(document.querySelector("#files"), body.files, body.total);
+      } catch {
+        note.textContent = "The disk reader is not running.";
+      } finally {
+        button.disabled = false;
+      }
     };
   </script>
 </body>

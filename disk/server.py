@@ -9,16 +9,42 @@ PORT = 18771
 ROOT = Path(__file__).resolve().parent
 
 
-def scan(folder: str, limit: int = 5000) -> dict:
-    base = Path(folder).expanduser()
+VIDEO = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v", ".wmv", ".mpg"}
+IMAGE = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tif", ".tiff"}
+AUDIO = {".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".wma"}
+
+
+def kind_of(name: str) -> str:
+    ext = Path(name).suffix.lower()
+    if ext in VIDEO:
+        return "Video"
+    if ext in IMAGE:
+        return "Pictures"
+    if ext in AUDIO:
+        return "Audio"
+    return "Other"
+
+
+def scan(folder: str, limit: int = 20000) -> dict:
+    raw = (folder or "").strip().strip('"')
+    if not raw:
+        return {"error": "Enter a folder path."}
+    base = Path(raw).expanduser()
     if not base.is_dir():
         return {"error": "That folder was not found."}
     total = 0
     count = 0
+    skipped = 0
     folders: dict[str, int] = {}
+    kinds: dict[str, int] = {}
     largest: list[tuple[int, str]] = []
-    for dirpath, dirnames, filenames in os.walk(base):
-        dirnames[:] = [name for name in dirnames if name not in {".git", "node_modules", "$RECYCLE.BIN"}]
+
+    def on_error(_err: OSError) -> None:
+        nonlocal skipped
+        skipped += 1
+
+    for dirpath, dirnames, filenames in os.walk(base, onerror=on_error):
+        dirnames[:] = [name for name in dirnames if name not in {".git", "node_modules", "$RECYCLE.BIN", "System Volume Information"}]
         for name in filenames:
             if count >= limit:
                 break
@@ -26,23 +52,34 @@ def scan(folder: str, limit: int = 5000) -> dict:
             try:
                 size = path.stat().st_size
             except OSError:
+                skipped += 1
                 continue
             total += size
             count += 1
             rel = str(path.relative_to(base))
             top = rel.split(os.sep, 1)[0]
-            folders[top] = folders.get(top, 0) + size
+            folder_name = "In this folder" if top == rel else top
+            folders[folder_name] = folders.get(folder_name, 0) + size
+            kind = kind_of(name)
+            kinds[kind] = kinds.get(kind, 0) + size
             largest.append((size, rel))
         if count >= limit:
             break
     largest.sort(reverse=True)
-    folder_rows = sorted(({ "name": name, "size": size } for name, size in folders.items()), key=lambda row: row["size"], reverse=True)
+
+    def ranked(bucket: dict[str, int], cap: int) -> list[dict]:
+        rows = [{"name": name, "size": size} for name, size in bucket.items()]
+        rows.sort(key=lambda row: row["size"], reverse=True)
+        return rows[:cap]
+
     return {
         "total": total,
         "count": count,
+        "skipped": skipped,
         "capped": count >= limit,
-        "folders": folder_rows[:12],
-        "files": [{"name": name, "size": size} for size, name in largest[:20]],
+        "folders": ranked(folders, 12),
+        "kinds": ranked(kinds, 4),
+        "files": [{"name": name, "size": size} for size, name in largest[:15]],
     }
 
 
