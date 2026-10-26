@@ -10,51 +10,109 @@
     p, h2 { color: #a39e93; }
     h1, h2 { color: #f3f1ea; font-weight: 500; }
     h2 { font-size: 0.95rem; margin: 1.25rem 0 0.4rem; }
-    input, button { height: 2.75rem; font: inherit; }
-    input { width: 100%; box-sizing: border-box; background: #171714; color: #f3f1ea; border: 1px solid #2e2e27; border-radius: 8px; padding: 0 0.75rem; }
-    button { margin-top: 0.5rem; background: #f3f1ea; color: #14130f; border: 0; border-radius: 8px; padding: 0 1rem; cursor: pointer; }
-    li { list-style: none; margin: 0.55rem 0; }
-    ul { margin: 0; padding: 0; }
+    input, button { font: inherit; }
+    input { width: 100%; box-sizing: border-box; height: 2.75rem; background: #171714; color: #f3f1ea; border: 1px solid #2e2e27; border-radius: 8px; padding: 0 0.75rem; }
+    #go { height: 2.75rem; margin-top: 0.5rem; background: #f3f1ea; color: #14130f; border: 0; border-radius: 8px; padding: 0 1rem; cursor: pointer; }
+    nav button, .bar, .file { background: transparent; color: inherit; border: 0; cursor: pointer; text-align: left; }
+    nav button { height: 2.75rem; padding: 0 0.4rem; border-radius: 8px; }
+    nav button:hover, .bar:hover, .file:hover, .file.on { background: #171714; }
+    .bar, .file { display: block; width: 100%; border-radius: 8px; padding: 0.45rem 0.5rem; }
     .row { display: flex; justify-content: space-between; gap: 1rem; }
     .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .size { color: #a39e93; white-space: nowrap; }
-    .track { height: 4px; background: #22221c; border-radius: 99px; margin-top: 0.25rem; }
-    .fill { height: 4px; background: #f3f1ea; border-radius: 99px; }
-    .cols { display: grid; gap: 1rem; }
-    @media (min-width: 720px) { .cols { grid-template-columns: 1fr 1fr; } }
+    .size, .meta { color: #a39e93; white-space: nowrap; }
+    .meta { font-size: 0.8rem; color: #7d786f; }
+    .track { height: 8px; background: #22221c; border-radius: 99px; margin-top: 0.3rem; }
+    .fill { height: 8px; background: #f3f1ea; border-radius: 99px; }
+    ul { margin: 0; padding: 0; }
+    li { list-style: none; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; font-size: 0.75rem; color: #7d786f; font-weight: 500; padding: 0.4rem 0.5rem; border-bottom: 1px solid #2e2e27; }
+    td { padding: 0; }
   </style>
 </head>
 <body>
   <main>
     <h1>Disk Space</h1>
-    <p>Enter a folder. This only reads sizes. Nothing is deleted.</p>
+    <p>Enter a folder. This only reads sizes. Click a bar to open the next breakdown. Nothing is deleted.</p>
     <input id="path" placeholder="C:\Users\you\Videos" />
     <button id="go" type="button">Read folder</button>
     <p id="note"></p>
+    <nav id="crumbs"></nav>
+    <p id="summary"></p>
     <h2 id="kind-title" hidden>By type</h2>
     <ul id="kinds"></ul>
-    <div class="cols">
-      <section>
-        <h2 id="folder-title" hidden>Largest folders</h2>
-        <ul id="folders"></ul>
-      </section>
-      <section>
-        <h2 id="file-title" hidden>Largest files</h2>
-        <ul id="files"></ul>
-      </section>
-    </div>
+    <h2 id="folder-title" hidden>Largest folders</h2>
+    <ul id="folders"></ul>
+    <h2 id="file-title" hidden>Largest files</h2>
+    <table id="files" hidden>
+      <thead><tr><th>Name</th><th>Type</th><th>Size</th></tr></thead>
+      <tbody></tbody>
+    </table>
   </main>
   <script>
+    const VIDEO = new Set(["mp4", "mov", "mkv", "webm", "avi", "m4v", "wmv", "mpg"]);
+    const IMAGE = new Set(["jpg", "jpeg", "png", "webp", "gif", "bmp", "tif", "tiff"]);
+    const AUDIO = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "wma"]);
+    let entries = [];
+    let folder = "";
+    let kind = "";
+    let picked = "";
+
+    function kindOf(path) {
+      const base = path.slice(path.lastIndexOf("/") + 1);
+      const dot = base.lastIndexOf(".");
+      const ext = dot > 0 ? base.slice(dot + 1).toLowerCase() : "";
+      if (VIDEO.has(ext)) return "Video";
+      if (IMAGE.has(ext)) return "Pictures";
+      if (AUDIO.has(ext)) return "Audio";
+      return "Other";
+    }
     function bytes(n) {
       if (n < 1024) return n + " B";
       if (n < 1048576) return (n / 1024).toFixed(n < 10240 ? 1 : 0) + " KB";
       if (n < 1073741824) return (n / 1048576).toFixed(n < 10485760 ? 1 : 0) + " MB";
       return (n / 1073741824).toFixed(1) + " GB";
     }
-    function paint(list, rows, total) {
+    function slice() {
+      const prefix = folder ? folder + "/" : "";
+      const folders = new Map();
+      const kinds = new Map();
+      const matched = [];
+      let total = 0;
+      let count = 0;
+      for (const entry of entries) {
+        if (prefix && entry.path !== folder && !entry.path.startsWith(prefix)) continue;
+        if (kind && entry.kind !== kind) continue;
+        const rel = prefix && entry.path.startsWith(prefix) ? entry.path.slice(prefix.length) : entry.path;
+        if (!rel) continue;
+        total += entry.size;
+        count += 1;
+        if (!kind) {
+          const k = kinds.get(entry.kind) || { size: 0, count: 0 };
+          k.size += entry.size; k.count += 1; kinds.set(entry.kind, k);
+        }
+        const slash = rel.indexOf("/");
+        if (slash !== -1) {
+          const name = rel.slice(0, slash);
+          const row = folders.get(name) || { size: 0, count: 0 };
+          row.size += entry.size; row.count += 1; folders.set(name, row);
+        }
+        const name = slash === -1 ? rel : rel.slice(rel.lastIndexOf("/") + 1);
+        const parent = slash === -1 ? (folder || "In this folder") : (folder ? folder + "/" : "") + rel.slice(0, rel.lastIndexOf("/"));
+        matched.push({ name, folder: parent, path: entry.path, size: entry.size, kind: entry.kind });
+      }
+      const rank = (map) => [...map.entries()].map(([name, row]) => ({ name, size: row.size, count: row.count })).sort((a, b) => b.size - a.size).slice(0, 12);
+      matched.sort((a, b) => b.size - a.size);
+      return { total, count, folders: rank(folders), kinds: rank(kinds), files: matched.slice(0, 20), fileCount: matched.length };
+    }
+    function bar(list, rows, total, open) {
       list.replaceChildren();
-      for (const row of rows || []) {
+      for (const row of rows) {
+        const pct = total > 0 ? Math.max(2, Math.round((row.size / total) * 100)) : 0;
         const li = document.createElement("li");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "bar";
         const line = document.createElement("div");
         line.className = "row";
         const name = document.createElement("span");
@@ -62,16 +120,86 @@
         name.textContent = row.name;
         const size = document.createElement("span");
         size.className = "size";
-        size.textContent = bytes(row.size);
+        size.textContent = bytes(row.size) + " · " + pct + "%";
         line.append(name, size);
         const track = document.createElement("div");
         track.className = "track";
         const fill = document.createElement("div");
         fill.className = "fill";
-        fill.style.width = (total > 0 ? Math.max(2, Math.round((row.size / total) * 100)) : 0) + "%";
+        fill.style.width = pct + "%";
         track.append(fill);
-        li.append(line, track);
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = row.count + (row.count === 1 ? " file" : " files");
+        button.append(line, track, meta);
+        button.onclick = () => open(row.name);
+        li.append(button);
         list.append(li);
+      }
+    }
+    function draw() {
+      const view = slice();
+      const crumbs = document.querySelector("#crumbs");
+      crumbs.replaceChildren();
+      const all = document.createElement("button");
+      all.type = "button";
+      all.textContent = "All";
+      all.onclick = () => { folder = ""; kind = ""; picked = ""; draw(); };
+      crumbs.append(all);
+      if (kind) {
+        const type = document.createElement("button");
+        type.type = "button";
+        type.textContent = "/ " + kind;
+        type.onclick = () => { folder = ""; picked = ""; draw(); };
+        crumbs.append(type);
+      }
+      const parts = folder ? folder.split("/") : [];
+      parts.forEach((part, index) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = "/ " + part;
+        button.onclick = () => { folder = parts.slice(0, index + 1).join("/"); picked = ""; draw(); };
+        crumbs.append(button);
+      });
+      document.querySelector("#summary").textContent = entries.length ? bytes(view.total) + " across " + view.count + (view.count === 1 ? " file" : " files") : "";
+      document.querySelector("#kind-title").hidden = !!kind || view.kinds.length === 0;
+      document.querySelector("#folder-title").hidden = view.folders.length === 0;
+      document.querySelector("#folder-title").textContent = kind ? kind + " by folder" : "Largest folders";
+      document.querySelector("#file-title").hidden = view.files.length === 0;
+      document.querySelector("#files").hidden = view.files.length === 0;
+      bar(document.querySelector("#kinds"), kind ? [] : view.kinds, view.total, (name) => { kind = name; picked = ""; draw(); });
+      bar(document.querySelector("#folders"), view.folders, view.total, (name) => { folder = folder ? folder + "/" + name : name; picked = ""; draw(); });
+      const body = document.querySelector("#files tbody");
+      body.replaceChildren();
+      for (const file of view.files) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 3;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "file" + (picked === file.path ? " on" : "");
+        const line = document.createElement("div");
+        line.className = "row";
+        const name = document.createElement("span");
+        name.className = "name";
+        name.textContent = file.name + "  ·  " + file.kind;
+        const size = document.createElement("span");
+        size.className = "size";
+        size.textContent = bytes(file.size);
+        line.append(name, size);
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = file.folder;
+        button.append(line, meta);
+        button.onclick = () => {
+          const parent = file.folder === "In this folder" ? "" : file.folder;
+          if (parent && parent !== folder) { folder = parent; kind = ""; }
+          picked = file.path;
+          draw();
+        };
+        td.append(button);
+        tr.append(td);
+        body.append(tr);
       }
     }
     document.querySelector("#go").onclick = async () => {
@@ -86,22 +214,13 @@
           body: JSON.stringify({ path: document.querySelector("#path").value })
         });
         const body = await res.json();
-        if (body.error) {
-          note.textContent = body.error;
-          paint(document.querySelector("#kinds"), [], 0);
-          paint(document.querySelector("#folders"), [], 0);
-          paint(document.querySelector("#files"), [], 0);
-          return;
-        }
+        if (body.error) { note.textContent = body.error; entries = []; draw(); return; }
+        entries = (body.entries || []).map((row) => ({ path: row.path, size: row.size, kind: kindOf(row.path) }));
+        folder = ""; kind = ""; picked = "";
         const extra = body.capped ? " Stopped at the file cap." : "";
         const missed = body.skipped ? " " + body.skipped + " could not be read." : "";
-        note.textContent = bytes(body.total) + " across " + body.count + " files." + extra + missed;
-        document.querySelector("#kind-title").hidden = false;
-        document.querySelector("#folder-title").hidden = false;
-        document.querySelector("#file-title").hidden = false;
-        paint(document.querySelector("#kinds"), body.kinds, body.total);
-        paint(document.querySelector("#folders"), body.folders, body.total);
-        paint(document.querySelector("#files"), body.files, body.total);
+        note.textContent = body.count + " files." + extra + missed + " Click a bar to open it.";
+        draw();
       } catch {
         note.textContent = "The disk reader is not running.";
       } finally {
