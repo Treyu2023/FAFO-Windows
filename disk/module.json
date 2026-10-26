@@ -1,0 +1,8 @@
+{
+  "id": "disk",
+  "name": "Disk Space",
+  "summary": "Shows which folders and files are using space. It does not delete anything.",
+  "platforms": ["windows"],
+  "start": "Start Disk Space.bat",
+  "port": 18771
+}

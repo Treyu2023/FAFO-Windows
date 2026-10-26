@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FAFO Toolbox</title>
+  <style>
+    body { margin: 0; background: #0e0e0c; color: #f3f1ea; font: 16px/1.45 "Segoe UI", sans-serif; }
+    main { max-width: 42rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+    p { color: #a39e93; }
+    li { display: flex; gap: 0.5rem; align-items: center; background: #171714; border-radius: 8px; padding: 0.75rem; margin: 0.4rem 0; }
+    button { height: 2.75rem; font: inherit; border-radius: 8px; padding: 0 0.9rem; cursor: pointer; }
+    .add { background: #f3f1ea; color: #14130f; border: 0; }
+    .quiet { background: transparent; color: #f3f1ea; border: 1px solid #2e2e27; }
+    dialog { background: #171714; color: #f3f1ea; border: 1px solid #2e2e27; border-radius: 12px; max-width: 24rem; }
+    dialog p { color: #a39e93; }
+  </style>
+</head>
+<body>
+  <main>
+    <p>FAFO</p>
+    <h1>Toolbox</h1>
+    <p>Add only the Windows tools you want. Each one runs on its own. You confirm before anything is added or removed.</p>
+    <ul id="list"></ul>
+  </main>
+  <dialog id="ask">
+    <h2 id="ask-title"></h2>
+    <p id="ask-body"></p>
+    <form method="dialog">
+      <button class="quiet" value="cancel">Cancel</button>
+      <button class="add" id="ask-go" value="ok">Confirm</button>
+    </form>
+  </dialog>
+  <script>
+    const list = document.querySelector("#list");
+    const ask = document.querySelector("#ask");
+    let pending = null;
+    function draw(data) {
+      const have = new Set((data.installed || []).map((item) => item.id));
+      list.innerHTML = "";
+      for (const item of data.modules) {
+        const li = document.createElement("li");
+        const text = document.createElement("div");
+        text.innerHTML = "<strong></strong><br><span></span>";
+        text.querySelector("strong").textContent = item.name;
+        text.querySelector("span").textContent = item.summary;
+        text.style.flex = "1";
+        const button = document.createElement("button");
+        button.className = have.has(item.id) ? "quiet" : "add";
+        button.textContent = have.has(item.id) ? "Remove" : "Add";
+        button.onclick = () => {
+          pending = { id: item.id, action: have.has(item.id) ? "remove" : "add", name: item.name };
+          document.querySelector("#ask-title").textContent = (pending.action === "add" ? "Add " : "Remove ") + item.name + "?";
+          document.querySelector("#ask-body").textContent = pending.action === "add"
+            ? "This installs that tool and nothing else. You can remove it later."
+            : "This removes the tool from the toolbox. The GitHub repo stays. Your other files stay.";
+          document.querySelector("#ask-go").textContent = pending.action === "add" ? "Add it" : "Remove it";
+          ask.showModal();
+        };
+        li.append(text, button);
+        list.append(li);
+      }
+    }
+    async function refresh() {
+      draw(await (await fetch("/api/catalog")).json());
+    }
+    ask.addEventListener("close", async () => {
+      if (ask.returnValue !== "ok" || !pending) return;
+      const path = pending.action === "add" ? "/api/install" : "/api/remove";
+      const body = await (await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: pending.id, confirm: true }) })).json();
+      pending = null;
+      if (body.error) alert(body.error);
+      refresh();
+    });
+    refresh();
+  </script>
+</body>
+</html>

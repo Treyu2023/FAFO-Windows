@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Disk Space</title>
+  <style>
+    body { margin: 0; background: #0e0e0c; color: #f3f1ea; font: 16px/1.45 "Segoe UI", sans-serif; }
+    main { max-width: 40rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+    p { color: #a39e93; }
+    input, button { height: 2.75rem; font: inherit; }
+    input { width: 100%; background: #171714; color: #f3f1ea; border: 1px solid #2e2e27; border-radius: 8px; padding: 0 0.75rem; }
+    button { margin-top: 0.5rem; background: #f3f1ea; color: #14130f; border: 0; border-radius: 8px; padding: 0 1rem; cursor: pointer; }
+    li { display: flex; justify-content: space-between; gap: 1rem; background: #171714; border-radius: 8px; padding: 0.5rem 0.75rem; margin: 0.25rem 0; }
+    span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Disk Space</h1>
+    <p>Enter a folder. This only reads sizes. Nothing is deleted.</p>
+    <input id="path" placeholder="C:\Users\you\Videos" />
+    <button id="go" type="button">Read folder</button>
+    <p id="note"></p>
+    <ul id="list"></ul>
+  </main>
+  <script>
+    const list = document.querySelector("#list");
+    const note = document.querySelector("#note");
+    function bytes(n) {
+      if (n < 1024) return n + " B";
+      if (n < 1048576) return Math.round(n / 1024) + " KB";
+      if (n < 1073741824) return (n / 1048576).toFixed(1) + " MB";
+      return (n / 1073741824).toFixed(1) + " GB";
+    }
+    document.querySelector("#go").onclick = async () => {
+      note.textContent = "Reading sizes";
+      const res = await fetch("/api/scan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: document.querySelector("#path").value }) });
+      const body = await res.json();
+      if (body.error) { note.textContent = body.error; list.innerHTML = ""; return; }
+      note.textContent = bytes(body.total) + " across " + body.count + " files" + (body.capped ? " (stopped at the cap)" : "");
+      list.innerHTML = body.files.map((row) => "<li><span>" + row.name.replace(/[&<>]/g, "") + "</span><span>" + bytes(row.size) + "</span></li>").join("");
+    };
+  </script>
+</body>
+</html>

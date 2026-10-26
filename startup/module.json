@@ -1,0 +1,8 @@
+{
+  "id": "startup",
+  "name": "Startup List",
+  "summary": "Lists programs that start with Windows. It cannot turn them off.",
+  "platforms": ["windows"],
+  "start": "Start Startup List.bat",
+  "port": 18774
+}

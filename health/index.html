@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PC Health</title>
+  <style>
+    body { margin: 0; background: #0e0e0c; color: #f3f1ea; font: 16px/1.45 "Segoe UI", sans-serif; }
+    main { max-width: 40rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+    p, li { color: #a39e93; }
+    button { height: 2.75rem; font: inherit; background: #f3f1ea; color: #14130f; border: 0; border-radius: 8px; padding: 0 1rem; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>PC Health</h1>
+    <p>Read-only. This does not change settings.</p>
+    <button id="go" type="button">Read this PC</button>
+    <pre id="out"></pre>
+  </main>
+  <script>
+    document.querySelector("#go").onclick = async () => {
+      const res = await fetch("/api/snapshot");
+      const body = await res.json();
+      document.querySelector("#out").textContent = JSON.stringify(body, null, 2);
+    };
+  </script>
+</body>
+</html>

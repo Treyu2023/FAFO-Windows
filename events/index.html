@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Event Viewer</title>
+  <style>
+    body { margin: 0; background: #0e0e0c; color: #f3f1ea; font: 16px/1.45 "Segoe UI", sans-serif; }
+    main { max-width: 46rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+    p { color: #a39e93; }
+    button { height: 2.75rem; font: inherit; background: #f3f1ea; color: #14130f; border: 0; border-radius: 8px; padding: 0 1rem; cursor: pointer; }
+    li { margin: 0.5rem 0; padding: 0.5rem 0.75rem; background: #171714; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Event Viewer</h1>
+    <p>Reads the System log. It does not clear it.</p>
+    <button id="go" type="button">Read recent events</button>
+    <p id="note"></p>
+    <ul id="list"></ul>
+  </main>
+  <script>
+    document.querySelector("#go").onclick = async () => {
+      const note = document.querySelector("#note");
+      const list = document.querySelector("#list");
+      note.textContent = "Reading";
+      const body = await (await fetch("/api/recent")).json();
+      if (body.error) { note.textContent = body.error; list.innerHTML = ""; return; }
+      const counts = {};
+      for (const row of body.events) counts[row.source || "Unknown"] = (counts[row.source || "Unknown"] || 0) + 1;
+      note.textContent = body.events.length + " events";
+      list.innerHTML = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 12)
+        .map(([name, count]) => "<li>" + name + " · " + count + "</li>").join("");
+    };
+  </script>
+</body>
+</html>

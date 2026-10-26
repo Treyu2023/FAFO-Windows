@@ -1,0 +1,8 @@
+{
+  "id": "health",
+  "name": "PC Health",
+  "summary": "Reads memory, disks, and uptime. It does not change settings.",
+  "platforms": ["windows"],
+  "start": "Start PC Health.bat",
+  "port": 18772
+}

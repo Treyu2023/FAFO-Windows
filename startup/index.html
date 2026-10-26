@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Startup List</title>
+  <style>
+    body { margin: 0; background: #0e0e0c; color: #f3f1ea; font: 16px/1.45 "Segoe UI", sans-serif; }
+    main { max-width: 46rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+    p, li { color: #a39e93; }
+    button { height: 2.75rem; font: inherit; background: #f3f1ea; color: #14130f; border: 0; border-radius: 8px; padding: 0 1rem; cursor: pointer; }
+    li { margin: 0.5rem 0; }
+    strong { color: #f3f1ea; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Startup List</h1>
+    <p>Read-only. This cannot turn a program off.</p>
+    <button id="go" type="button">Read startup programs</button>
+    <p id="note"></p>
+    <ul id="list"></ul>
+  </main>
+  <script>
+    document.querySelector("#go").onclick = async () => {
+      const body = await (await fetch("/api/list")).json();
+      document.querySelector("#note").textContent = body.error || (body.items.length + " items");
+      document.querySelector("#list").innerHTML = (body.items || []).map((item) => "<li><strong>" + (item.name || "Unnamed") + "</strong><br>" + (item.command || "") + "</li>").join("");
+    };
+  </script>
+</body>
+</html>

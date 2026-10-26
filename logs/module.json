@@ -1,0 +1,8 @@
+{
+  "id": "logs",
+  "name": "Reports and Logs",
+  "summary": "Opens a report or a log and lets you search it. It does not change the file.",
+  "platforms": ["windows"],
+  "start": "Start Reports and Logs.bat",
+  "port": 18775
+}

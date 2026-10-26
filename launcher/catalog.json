@@ -1,0 +1,7 @@
+[
+  {"id": "disk", "name": "Disk Space", "folder": "disk", "ready": true, "summary": "Shows which folders and files are using space. It does not delete anything."},
+  {"id": "logs", "name": "Reports and Logs", "folder": "logs", "ready": true, "summary": "Opens a report or a log and lets you search it. It does not change the file."},
+  {"id": "events", "name": "Event Viewer", "folder": "events", "ready": true, "summary": "Reads recent Windows events and groups the noisy ones. It does not clear the log."},
+  {"id": "health", "name": "PC Health", "folder": "health", "ready": true, "summary": "Reads memory, disks, and uptime. It does not change settings."},
+  {"id": "startup", "name": "Startup List", "folder": "startup", "ready": true, "summary": "Lists programs that start with Windows. It cannot turn them off."}
+]
